@@ -16,7 +16,7 @@ umount /sys/fs/cgroup
 
 It should fail.
 
-Start a new container, but add `umount /sys/fs/cgroup` after the `-it` option.
+Start a new container, but add `--cap-add=CAP_SYS_ADMIN` after the `-it` option.
 
 Does it work now?
 
