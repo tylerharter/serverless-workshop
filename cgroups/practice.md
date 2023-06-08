@@ -201,7 +201,86 @@ echo 10 > pids.max
 Run `f.fork_times(100)` in the Python session and note that it only
 creates 9 (the limit of 10 includes the already running process).
 
-## Memory: TODO
+## Memory Limit
 
-## CPU: TODO
+* start an interactive Python session: `python3`
+* get the PID: `import os; os.getpid()`
+* add it to a cgroup (reused from before, or create a new one)
+* limit memory to 50 MB: `echo 50m > memory.max`
+* allocate a 100 MB string in Python: `s = "A" * 100000000`
+* should see `Killed`
+* run `cat memory.events` -- you should see that the OOM killer had to kill one process (see `oom_kill` line)
 
+## CPU Limit
+
+* start a new Python session
+* add it to a cgroup
+* launch an infinite loop: `while True: pass`
+* in another terminal, observe one core fully used with `htop`
+* choose a core you want it to run on, then move it there: `echo CORENUM > cpuset.cpus`
+* check htop again to make sure it worked
+* limit it to 50% of every 100ms period: `echo "50000 100000" > cpu.max`
+* check htop again
+
+## Docker cgroups
+
+Start a Docker container that runs an infinite loop, with 50% of a core:
+
+```
+docker run -d --cpu-period=100000 --cpu-quota=50000 python python -c 'while True: pass'
+```
+
+You'll see the container ID -- copy it.
+
+`cd` to here, replacing "CONTAINER" with the ID:
+
+```
+/sys/fs/cgroup/system.slice/docker-CONTAINER.scope
+```
+
+Look at `cpu.max` -- do you see the settings from before?
+
+Run htop to see you're using half a core.
+
+Now modify `cpu.max` to give it a full core, then check again.
+
+## OpenLambda cgroups
+
+Checkout and build OpenLambda: https://github.com/open-lambda/open-lambda
+
+Create a new worker directory:
+
+```
+./ol worker init -p cg-test -i ol-min
+```
+
+Edit `cg-test/config.json`:
+* set `procs` to 25
+* in `registry`, replace `cg-test/registry` with `test-registry`
+
+Launch the worker:
+
+```
+./ol worker up -d
+```
+
+Look at the `fbomb` lambda: `cat test-registry/fbomb/f.py`
+
+Now invoke it a couple times:
+
+```
+curl -X POST localhost:5000/run/fbomb -d '{"times": 20}'
+
+curl -X POST localhost:5000/run/fbomb -d '{"times": 30}'
+```
+
+Note that you can only create 24 containers given your limit.
+
+Run:
+
+```
+cd /sys/fs/cgroup/cg-test-sandboxes/
+ls
+```
+
+You'll see the cgroups created by OpenLambda ("cg-NUM").
