@@ -59,14 +59,16 @@ SOCK Incoming (other side of `sb.Client().Do(httpReq)`):
     * `f.pullHandlerIfStale()` (see **Cold Function Code**)
     * `f.newInstance()` (see **Cold Sandbox**)
 
-Cold Function Code:
+### Cold Function Code:
+
 * src/worker/lambda/lambdaFunction.go: `pullHandlerIfStale`
     * `f.lastPull != nil && int64(now.Sub(*f.lastPull)) < cacheNs` only check every few seconds (default 5)
     * `meta.Installs, err = f.lmgr.PackagePuller.InstallRecursive(meta.Installs)` (see **Cold Packages**)
 * src/worker/lambda/handlerPuller.go: `Pull`
     * `pullRemoteFile` (`If-Modified-Since`) or `pullLocalFile` (`stat.ModTime()`)
 
-Cold Packages:
+### Cold Packages:
+
 * src/worker/lambda/packages/packagePuller.go: `InstallRecursive`
     * loop until `installs` is empty -- it can shrink (is we install stuff) or grow (as we discover new dependencies)
     * `pp.GetPkg(pkg)`
@@ -79,12 +81,14 @@ Cold Packages:
     * `req, err := http.NewRequest("POST", "http://container/run/pip-install", reqBody)`
     * `resp, err := sb.Client().Do(req)`
 
-Cold Sandbox
+### Cold Sandbox
+
 * src/worker/lambda/lambdaInstance.go: `Task`
     * `sb, err = f.lmgr.ZygoteProvider.Create` - Zygotes used and successful (see **Cold Zygotes**)
     * `sb, err = f.lmgr.sbPool.Create` - no Zygote path
 
-Cold Zygotes
+### Cold Zygotes
+
 * src/worker/lambda/zygote/importCache.go: `Create`
     * `Lookup` -- find node
 * src/worker/lambda/zygote/importCache.go: `createChildSandboxFromNode`
@@ -99,3 +103,22 @@ Cold Zygotes
 
 ## Interfaces
 
+* src/worker/sandbox/cgroups/api.go: `Cgroup` interface
+* src/worker/sandbox/api.go: `SandboxPool` and `Sandbox` (full interfaces)
+* `SandboxEvent` (function type interface)
+* src/worker/sandbox/safeSandbox.go: `safeSandbox` wrapper
+    * all (except Client) use locking
+    * `dead` is an error.  If any call returns an error, future calls are fine -- they'll just return the error
+    * if the wrapped Sandbox is returned, it is also automatically destroyed
+    * notifies each `SandboxEventFunc`
+* src/worker/sandbox/evictors.go: `SockEvictor`
+    * `SOCKEvictor.Event` implements `SandboxEventFunc`
+    * sometimes kills Sandboxes to free up memory.  Everything in OL needs to assume any Sandbox can die at any moment
+    * the evictor tries to predict paused containers, but we have an async view of the system.  We had to add `DestroyIfPaused` to the `Sandbox` API to avoid closer coordination between the evictor, lambda layer, and Sandbox layer
+    * `src/worker/sandbox/memPool.go`
+        * memPool enforces admission control
+        * Sandbox destruction and pausing increases memory supply
+        * Sandbox creation and unpausing decreases memory supply
+* src/worker/lambda/zygote/api.go: `ZygoteProvider`
+    * `ImportCacheNode`: primary implementation
+    * `MultiTree`: collection of `ImportCacheNode`s (useful when too much contention on a single Zygote node)
